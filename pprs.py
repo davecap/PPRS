@@ -17,13 +17,20 @@ def main():
     if len(args) < 2:
         parser.error("Input files not specified")
 
-    # Parse the Endnote XML file
-    xi = indexer.XMLIndexer(args[1])
-    xi.create_index()
     
     # Parse the MEDLINE XML file into individual papers
-    xp = xmlparser.MedlineXMLParser(args[0])
+    f = open(args[0])
+    medline_xmldata = f.read()
+    f.close()
+    xp = xmlparser.MedlineXMLParser(medline_xmldata)
     articles = xp.process()
+
+    # Parse the Endnote XML file
+    f = open(args[1])
+    endnote_xmldata = f.read()
+    f.close()
+    xi = XMLIndexer(name=args[1])
+    xi.create_index(xmldata)
     
     for a in articles:
         score = 0

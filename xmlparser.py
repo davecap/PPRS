@@ -1,5 +1,5 @@
 import xml.parsers.expat
-from xml.etree.ElementTree import ElementTree
+import xml.etree.ElementTree
 
 import datetime
 import optparse
@@ -16,27 +16,36 @@ def main():
     if len(args) == 0:
         parser.error("No input file specified")
 
+    f = open(args[0])
+    xmldata = f.read()
+    f.close()
+
     if options.medline:
-        xp = MedlineXMLParser(args[0])
-        xp.process()
+        xp = MedlineXMLParser(xmldata)
+        elements = xp.process()
+        print "%d elements found in '%s'" % (len(elements), args[0])
     else:
-        xp = EndnoteXMLParser(args[0])
-        xp.process()
+        xp = EndnoteXMLParser(xmldata)
+        documents = xp.process()
+        for k in documents.keys():
+            print "%d %s in '%s'" % (len(documents[k]), k, args[0])
 
 class XMLTreeParser(object):
-    def __init__(self, filename):
-        self.filename = filename
-        self.skip_elements = []
-        self.allowed_elements = []
+    def __init__(self, xmldata):
+        self.xmldata = xmldata
+        self.elements = None
     
     def parse(self):
-        tree = ElementTree()
-        tree.parse(self.filename)
+        tree = xml.etree.ElementTree.fromstring(self.xmldata)
         return tree
+    
+    def process(self):
+        raise Exception('this should be implemented in the subclass!')
 
+# TODO: use XMLTreeParser eventually
 class XMLParser(object):
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, xmldata):
+        self.xmldata = xmldata
         self.skip_elements = []
         self.allowed_elements = []
     
@@ -44,23 +53,19 @@ class XMLParser(object):
         self.skip_elements = self.clean_set(self.skip_elements)
         self.allowed_elements = self.clean_set(self.allowed_elements)
         
-        self.elements = []
+        self.xml_elements = []
         self.documents = { 'authors': [], 'keywords': [], 'journals': [] }
         
         self.current_element = None
-        self.depth = 1
         
         p = xml.parsers.expat.ParserCreate()
         p.StartElementHandler = self.start_element
         p.EndElementHandler = self.end_element
         p.CharacterDataHandler = self.char_data
-        
-        f = open(self.filename, 'r')
-        p.Parse(f.read(), 1)
-        f.close()
+        p.Parse(self.xmldata, 1)
     
     def process(self):
-        pass
+        raise Exception('this should be implemented in the subclass!')
     
     def clean(self, name):
         return name.lower()
@@ -81,7 +86,7 @@ class XMLParser(object):
             # make sure the current element is the one being ended
             if name == self.current_element[0]:
                 if name in self.allowed_elements:
-                    self.elements.append(self.current_element)
+                    self.xml_elements.append(self.current_element)
                     self.current_element = None
         
     def char_data(self, data):
@@ -89,7 +94,7 @@ class XMLParser(object):
         if self.current_element is not None:
             self.current_element[1] += data
 
-class MedlineArticle(object):
+class MedlineCitation(object):
     def __init__(self, xmldata):
         self.xmldata = xmldata
         self.pmid = xmldata.findtext("PMID")
@@ -113,36 +118,33 @@ class MedlineArticle(object):
 
 class MedlineXMLParser(XMLTreeParser):
     def process(self):
-        # self.allowed_elements = ['title', 'isoabbreviation', 'articletitle', 'lastname', 'abstracttext']
-        tree = self.parse()
-        articles = []
-        for a in tree.findall('MedlineCitation'):
-            articles.append(MedlineArticle(a))
-            # for a in p.getiterator('Article')
-        #print "%d articles found." % len(articles)
-        return articles
-        
-        # for e in self.elements:
-        #     if e[0] in ('lastname'):
-        #         self.documents['authors'].append(e[1])
-        #     elif e[0] in ('articletitle', 'abstracttext'):
-        #         self.documents['keywords'].append(e[1])
-        #     elif e[0] in ('title', 'isoabbreviation'):
-        #         self.documents['journals'].append(e[1])
-        # return self.documents
+        if self.elements is None:
+            tree = self.parse()
+            self.elements = []
+            if tree.find('MedlineCitation'):
+                all_articles = tree.findall('MedlineCitation')
+            elif tree.find('PubmedArticle'):
+                all_articles = tree.findall('PubmedArticle/MedlineCitation')
+            else:
+                raise Exception("Unsupported Medline XML file format... I can't parse it!")
+            for a in all_articles:
+                self.elements.append(MedlineCitation(a))
+        return self.elements
 
 class EndnoteXMLParser(XMLParser):
     def process(self):
-        self.allowed_elements = ['author', 'authors', 'title', 'abstract', 'keyword', 'keywords', 'full-title', 'secondary-title', 'secondary_title', 'journal']
+        self.allowed_elements = ['author', 'authors', 'title', 'abstract', 'keyword', 'keywords', 'full-title', 'secondary-title', 'secondary_title']
         self.parse()
-        for e in self.elements:
+        for e in self.xml_elements:
             if e[0] in ('author', 'authors'):
                 self.documents['authors'].append(e[1])
-            elif e[0] in ('title', 'abstract', 'keyword', 'keywords', 'full-title'):
+            elif e[0] in ('title', 'abstract', 'keyword', 'keywords'):
                 self.documents['keywords'].append(e[1])
-            elif e[0] in ('secondary-title', 'secondary_title', 'journal'):
+            elif e[0] in ('secondary-title', 'secondary_title', 'full-title'):
                 if e[1].lower().find('submit') < 0:
-                    self.documents['journals'].append(e[1])
+                    #ignore duplicates...
+                    if e[1] not in self.documents['journals']:
+                        self.documents['journals'].append(e[1])
         return self.documents
 
 if __name__ == '__main__':

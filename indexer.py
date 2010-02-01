@@ -22,10 +22,14 @@ def main():
     options, args = parser.parse_args()
     if len(args) == 0:
         parser.error("No input file specified")
-
+    
+    f = open(args[0])
+    xmldata = f.read()
+    f.close()
+    
     # Parse the Endnote XML file
-    xi = XMLIndexer(args[0])
-    xi.create_index()
+    xi = XMLIndexer(name=args[0])
+    xi.create_index(xmldata)
     
     # Parse the MEDLINE XML file into individual papers
     # for each paper p
@@ -33,9 +37,9 @@ def main():
     #   add to sorted array
     
 class XMLIndexer(object):
-    def __init__(self, filename):
-        self.filename = filename
-        self.index_dir = "%s_index" % filename
+    def __init__(self, name):
+        self.name = name
+        self.index_dir = "%s_index" % name
         self.authors_dir = os.path.join(self.index_dir, "authors")
         self.keywords_dir = os.path.join(self.index_dir, "keywords")
         self.journals_dir = os.path.join(self.index_dir, "journals")
@@ -80,8 +84,8 @@ class XMLIndexer(object):
         self.index_keywords = open_dir(self.keywords_dir)
         self.index_journals = open_dir(self.journals_dir)
     
-    def create_index(self):
-        xp = EndnoteXMLParser(self.filename)
+    def create_index(self, xmldata):
+        xp = EndnoteXMLParser(xmldata)
         documents = xp.process()
 
         # Make the index directories
